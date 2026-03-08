@@ -922,6 +922,7 @@
     let audioChunks  = [];
     let currentUtterance = null;
     let currentAudio = null;
+    let browserRecognition = null;
 
     const $ = id => document.getElementById(id);
     const messagesEl    = $('messages');
@@ -1007,7 +1008,7 @@
             <button class="chip" data-prompt="What can you help me with?">What can you help me with?</button>
             <button class="chip" data-prompt="Explain quantum computing simply.">Explain quantum computing</button>
             <button class="chip" data-prompt="Write a short poem about the stars.">Write a poem</button>
-            <button class="chip" data-prompt="What are the best programming languages to learn in 2025?">Best languages to learn</button>
+            <button class="chip" data-prompt="What are the best programming languages to learn in 2026?">Best languages to learn</button>
           </div>
         </div>`;
       bindWelcomeEvents();
@@ -1126,6 +1127,10 @@
         });
 
         removeTyping(typingId);
+        if (!res.ok || !res.body) {
+          const errText = await res.text().catch(() => '');
+          throw new Error(errText || `Chat request failed (${res.status})`);
+        }
 
         if (voiceOnly) {
           voiceCard = addVoiceCard();
@@ -1165,7 +1170,9 @@
           }
         }
 
-        history.push({ role: 'assistant', content: fullResponse });
+        if (fullResponse) {
+          history.push({ role: 'assistant', content: fullResponse });
+        }
 
         if (voiceOnly && fullResponse) {
           // Update card state: speaking
@@ -1187,6 +1194,17 @@
           }
         } else if (!voiceOnly && autoSpeakEl.checked && fullResponse) {
           await speakText(fullResponse);
+        } else if (!fullResponse) {
+          if (voiceCard) {
+            const label = voiceCard.querySelector('.voice-card-label');
+            const sub   = voiceCard.querySelector('.voice-card-sub');
+            voiceCard.classList.add('done');
+            if (label) label.textContent = 'No response received';
+            if (sub)   sub.textContent   = 'Try again or switch model';
+          }
+          if (bubble) {
+            bubble.innerHTML = '<span class="msg-error">No response received from model.</span>';
+          }
         }
 
       } catch (err) {
@@ -1322,6 +1340,15 @@
 
     // ── Voice recording ──────────────────────────────────────
     async function toggleRecording() {
+      if (sttProviderEl.value === 'browser') {
+        if (browserRecognition) {
+          stopRecording();
+          return;
+        }
+        browserSTT();
+        return;
+      }
+
       if (mediaRecorder && mediaRecorder.state === 'recording') { stopRecording(); return; }
       startRecording();
     }
@@ -1348,6 +1375,10 @@
     }
 
     function stopRecording() {
+      if (browserRecognition) {
+        try { browserRecognition.stop(); } catch (_) {}
+        browserRecognition = null;
+      }
       if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
         mediaRecorder.stream.getTracks().forEach(t => t.stop());
@@ -1428,16 +1459,28 @@
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) { alert('Browser Speech Recognition not supported. Switch to Sarvam.ai STT.'); return; }
       const rec = new SR();
+      browserRecognition = rec;
       rec.lang = 'en-IN';
       rec.interimResults = false;
       rec.maxAlternatives = 1;
+      micBtn.classList.add('recording');
+      recordOverlay.classList.add('active');
+      recordStatus.textContent = 'Listening...';
       rec.onresult = e => {
         const transcript = e.results[0][0].transcript;
         msgInput.value = transcript;
         autoResize();
-        sendMessage(true);   // voice input
+        sendMessage(true); // voice input
       };
-      rec.onerror = e => console.error('Speech recognition error:', e.error);
+      rec.onerror = e => {
+        console.error('Speech recognition error:', e.error);
+        alert('Browser STT failed: ' + e.error);
+      };
+      rec.onend = () => {
+        browserRecognition = null;
+        micBtn.classList.remove('recording');
+        recordOverlay.classList.remove('active');
+      };
       rec.start();
     }
 

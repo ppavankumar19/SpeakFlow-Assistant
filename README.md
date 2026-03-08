@@ -33,7 +33,8 @@ ollama-chat/
 │   └── requirements.txt   # Python dependencies
 ├── frontend/
 │   └── index.html         # Single-file UI (HTML + CSS + JS)
-├── .env                   # API keys and model config
+├── .env.example           # Template for environment variables
+├── .env                   # Local secrets/config (not committed)
 ├── start.sh               # One-command startup script
 └── README.md
 ```
@@ -62,6 +63,12 @@ Sign up at [https://sarvam.ai](https://sarvam.ai) and get a free key.
 
 ### Step 1 — Configure `.env`
 
+Create your local env file:
+
+```bash
+cp .env.example .env
+```
+
 Open `.env` and set your values:
 
 ```env
@@ -71,6 +78,7 @@ SARVAM_API_KEY=your_actual_key_here
 ```
 
 Leave `SARVAM_API_KEY` blank to use browser built-in voices automatically.
+(`start.sh` will also auto-create `.env` from `.env.example` if missing.)
 
 ---
 
@@ -153,7 +161,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 | Provider | STT | TTS | Requires Key |
 |---|---|---|---|
 | **Browser (built-in)** | Web Speech API | SpeechSynthesis API | No |
-| **Sarvam.ai** | `saarika:v2` model | `bulbul:v1` model (Meera voice) | Yes |
+| **Sarvam.ai** | `saarika:v2.5` model | `bulbul:v2` model (`anushka` voice) | Yes |
 
 Switch providers from the **Voice Settings** panel in the sidebar.
 

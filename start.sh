@@ -9,6 +9,16 @@ echo "========================================"
 echo "   AI Voice Chat - Startup"
 echo "========================================"
 
+# 0. Ensure .env exists
+if [ ! -f "$PROJECT_DIR/.env" ]; then
+  if [ -f "$PROJECT_DIR/.env.example" ]; then
+    echo "[INFO] .env not found. Creating from .env.example..."
+    cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
+  else
+    echo "[WARN] .env not found. Create one with OLLAMA_BASE_URL, OLLAMA_MODEL, and SARVAM_API_KEY."
+  fi
+fi
+
 # 1. Check Ollama
 if ! command -v ollama &>/dev/null; then
   echo "[WARN] Ollama not found. Install from https://ollama.com"
@@ -33,7 +43,8 @@ echo "[INFO] Installing Python dependencies..."
 "$VENV_DIR/bin/pip" install -q -r "$BACKEND_DIR/requirements.txt"
 
 # 4. Check .env
-if grep -q "PASTE_YOUR_KEY_HERE" "$PROJECT_DIR/.env"; then
+if [ -f "$PROJECT_DIR/.env" ] && \
+   (grep -q "PASTE_YOUR_KEY_HERE" "$PROJECT_DIR/.env" || ! grep -Eq '^SARVAM_API_KEY=.+$' "$PROJECT_DIR/.env"); then
   echo ""
   echo "[WARN] Sarvam.ai API key not set!"
   echo "       Edit .env and replace PASTE_YOUR_KEY_HERE with your key."
