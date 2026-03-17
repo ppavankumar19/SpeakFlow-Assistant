@@ -733,6 +733,37 @@
     }
     .stop-record-btn:hover { opacity: 0.9; }
 
+    /* ── Toast notifications ─────────────────────────────────── */
+    .toast-container {
+      position: fixed;
+      bottom: 110px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 300;
+      pointer-events: none;
+    }
+    .toast {
+      padding: 10px 16px;
+      background: rgba(18, 8, 14, 0.97);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 0.84rem;
+      line-height: 1.5;
+      backdrop-filter: blur(14px);
+      pointer-events: auto;
+      max-width: 300px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+      animation: toastIn 0.2s ease, toastOut 0.35s ease 2.65s forwards;
+    }
+    .toast.error   { border-color: var(--danger);  color: #fca5a5; }
+    .toast.warning { border-color: var(--warning);  color: #fde68a; }
+    .toast.info    { border-color: rgba(168,85,247,0.5); color: var(--accent2); }
+    @keyframes toastIn  { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+    @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateX(16px); } }
+
     /* ── Responsive ──────────────────────────────────────── */
     @media (max-width: 640px) {
       .sidebar { position: absolute; z-index: 50; height: 100%; }
@@ -893,6 +924,9 @@
       <p class="input-hint">Enter to send &nbsp;&bull;&nbsp; Shift+Enter for newline &nbsp;&bull;&nbsp; Mic = voice input (voice-only reply)</p>
     </div>
   </main>
+
+  <!-- ── Toast notifications ───────────────────────────── -->
+  <div class="toast-container" id="toast-container"></div>
 
   <!-- ── Recording overlay ──────────────────────────────── -->
   <div class="record-overlay" id="record-overlay">
@@ -1166,6 +1200,7 @@
                 fullResponse += data.content;
                 if (bubble) { bubble.textContent = fullResponse; scrollBottom(); }
               }
+              if (data.done) break;
             } catch { /* skip bad JSON */ }
           }
         }
@@ -1338,6 +1373,15 @@
     function timestamp()      { return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
     function escHtml(str)     { return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+    function showToast(message, type = 'error') {
+      const container = $('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 3100);
+    }
+
     // ── Voice recording ──────────────────────────────────────
     async function toggleRecording() {
       if (sttProviderEl.value === 'browser') {
@@ -1370,7 +1414,7 @@
         recordOverlay.classList.add('active');
         recordStatus.textContent = 'Listening...';
       } catch (err) {
-        alert('Microphone access denied: ' + err.message);
+        showToast('Microphone access denied: ' + err.message);
       }
     }
 
@@ -1390,12 +1434,9 @@
     async function handleRecordingStop() {
       if (audioChunks.length === 0) return;
       const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-
-      if (sttProviderEl.value === 'sarvam') {
-        await sarvamSTT(blob);
-      } else {
-        browserSTT();
-      }
+      // MediaRecorder is only used when Sarvam STT is selected;
+      // browser STT uses the Web Speech API and never triggers this path.
+      await sarvamSTT(blob);
     }
 
     async function blobToWav(blob) {
@@ -1435,6 +1476,8 @@
     }
 
     async function sarvamSTT(blob) {
+      // Re-show overlay while waiting for transcription (stopRecording hid it)
+      recordOverlay.classList.add('active');
       recordStatus.textContent = 'Transcribing...';
       try {
         const wavBlob = await blobToWav(blob);
@@ -1443,21 +1486,25 @@
         const res = await fetch(`${API}/api/stt`, { method: 'POST', body: fd });
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
-        const transcript = data.transcript || '';
+        const transcript = (data.transcript || '').trim();
         if (transcript) {
           msgInput.value = transcript;
           autoResize();
           sendMessage(true);   // voice input
+        } else {
+          showToast('No speech detected. Please try again.', 'warning');
         }
       } catch (err) {
         console.error('STT error:', err);
-        alert('STT failed: ' + err.message);
+        showToast('STT failed: ' + err.message);
+      } finally {
+        recordOverlay.classList.remove('active');
       }
     }
 
     function browserSTT() {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) { alert('Browser Speech Recognition not supported. Switch to Sarvam.ai STT.'); return; }
+      if (!SR) { showToast('Browser Speech Recognition not supported. Switch to Sarvam.ai STT.', 'warning'); return; }
       const rec = new SR();
       browserRecognition = rec;
       rec.lang = 'en-IN';
@@ -1474,7 +1521,7 @@
       };
       rec.onerror = e => {
         console.error('Speech recognition error:', e.error);
-        alert('Browser STT failed: ' + e.error);
+        showToast('Browser STT error: ' + e.error, 'warning');
       };
       rec.onend = () => {
         browserRecognition = null;
